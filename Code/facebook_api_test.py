@@ -93,7 +93,7 @@ def format_time(time):
     #TODO
     return time
 
-def enrich_format_fb_post(post)
+def enrich_format_fb_post(post):
     user_id = post["id"].split("_")[0]
     if post["from"]["id"] == user_id:
         new_post["_id"] = post["id"]
