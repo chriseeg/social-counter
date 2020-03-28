@@ -1,59 +1,52 @@
 #!pip3 install facebook_business
 
-
 from facebook_business.adobjects.page import Page
 from facebook_business.adobjects.pagepost import PagePost
 from facebook_business.api import FacebookAdsApi
+import mongoDB_functions as mf
 import requests
 import pymongo
+import ciso8601
+import json
 import re
+import os
 
 
-def initialize_db():
-    print("MongoDB initialized")
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
-    db = client.socialcounter_db
-    return db
+def enrich_format_fb_posts(posts):
+    # Converts one or multiple facebook posts for mongoDB
+    print("Enriching facebook posts")
 
-
-def write_insta_posts_to_mongodb(posts, collection, raw_values=False):
-    # takes a list of instagram posts in original formatting and writes it into the mongoDB collection
-
+    input_type = list
     if type(posts) is not list:
         posts = [posts]
+        input_type = dict
 
-    if raw_values:
-        collection.insert_many(posts)
-        return posts
+    enriched_posts = []
 
-    clean_json_list = []
-    new_ids = []
     for post in posts:
+        #print(post)
+        target_user_id = post["id"].split("_")[0]
+        new_post = {}
         try:
-            view_count = post["view_count"]
+            post_creator_id = post["from"]["id"]
         except:
-            view_count = 0
+            continue
 
-        clean_json = {
-            "_id": post["id"],
-            "platform": "instagram",
-            "url": "https://www.instagram.com/p/" + post["code"],
-            "username": post["user"]["username"],
-            "taken_at": post["taken_at"],
-            "comment_count": post["comment_count"],
-            "like_count": post["like_count"],
-            "media_type": post["media_type"],
-            "view_count": view_count
-        }
+        if post_creator_id == target_user_id:  # check if it is not a post from another user
+            new_post["_id"] = post["id"]
+            new_post["platform"] = "facebook"
+            new_post["url"] = post["permalink_url"]
+            new_post["username"] = post["from"]["name"]
+            # TODO: Create function to format from "2020-03-13T19:19:23+0000" to insta time format
+            new_post["taken_at"] = ciso8601.parse_datetime(post["created_time"])
+            new_post["like_count"], new_post["comment_count"] = scrape_fb_likes_comments(
+                post["permalink_url"])
+            enriched_posts.append(new_post)
 
-        clean_json_list.append(clean_json)
-        new_ids.append(post["id"])
-
-    # delete all items that are in new_ids
-    collection.delete_many({"_id": {"$in": new_ids}})
-    collection.insert_many(clean_json_list)  # upload multiple items
-    print("Instagram Posts written to MongoDB")
-    return(clean_json_list)
+    if input_type is list:
+        return enriched_posts
+    else:
+        return enriched_posts[0]
 
 
 def scrape_fb_likes_comments(url):
@@ -63,24 +56,55 @@ def scrape_fb_likes_comments(url):
     regex_comment_string = r'comment_count:{total_count:([0-9]+)},.+' + \
         post_id + r'"'
     r = requests.get(url).text
-    like_count = int(re.search(regex_like_string, r).group(1))
-    comment_count = int(re.search(regex_comment_string, r).group(1))
+    try:
+        like_count = int(re.search(regex_like_string, r).group(1))
+    except:
+        print("Could not scrape facebook likes from {}".format(url))
+        like_count = 0
+    try:
+        comment_count = int(re.search(regex_comment_string, r).group(1))
+    except:
+        print("Could not scrape facebook comments from {}".format(url))
+        comment_count = 0
+
     # open("demo_r_file.txt","w").write(requests.get(urls[1]).text)
     return (like_count, comment_count)
 
 
-my_app_id = '127335021929773'
-my_app_secret = '7a67323c9c38771878a60c03934f8c38'
-my_access_token = 'EAABzz36ZC5S0BAAMZAf4OG2ZC81QZAZBVMt4qUaZB5z7WWLeBnlgFCf5FjCVSqduW5q2bqwjlF5kT7NwID9v98Xnu7j5H1Qgqk3yxCzLzdYYomancm0N1N8sXAVV76r7yrJ0vRNQBT2nxG7ZCvpVOOJ0Q2pb3VYLZCNwJQXAmwi686utZCkicpOhHBXlrhH7SQKHDeCZBJO3T7oQZDZD'
-FacebookAdsApi.init(my_app_id, my_app_secret, my_access_token)
+def load_config(filepath):
+    dirname = os.path.dirname(__file__) + "/" + filepath
+    #dirname = filepath
+    with open(dirname) as json_config_file:
+        config = json.load(json_config_file)
+    fb_app_id = config["fb_app_id"]
+    fb_app_secret = config["fb_app_secret"]
+    fb_access_token = config["fb_access_token"]
+    print("Configuration set")
+    return fb_app_id, fb_app_secret, fb_access_token
 
-fb_page_id = "751183738294559"  # wne
-fb_page = Page(fb_page_id)
 
-#fields = ["id","permalink_url","created_time","from","comments.summary(true)","likes.summary(true)"]
-fields = ["id", "permalink_url", "created_time", "from"]
-fb_feed = fb_page.get_feed(fields=fields, params={})  # "limit":100})
-fb_post_list = list(fb_feed)
+def get_page_metrics():
+    # unused!
+    # params = {
+    #     "metric": ['post_reactions_by_type_total', "post_impressions", "post_clicks"],
+    #     "period": 'lifetime',
+    #     "show_description_from_api_doc": True
+    # }
+    return True
+
+
+def fb_get_feed(fb_target_page_id):
+    print("Getting facebook feed")
+    fb_page = Page(fb_target_page_id)
+
+    #fields = ["id","permalink_url","created_time","from","comments.summary(true)","likes.summary(true)"]
+    fields = ["id", "permalink_url", "created_time", "from"]
+    fb_feed = fb_page.get_feed(fields=fields, params={})  # "limit":100})
+    fb_post_list = list(fb_feed)
+    return fb_post_list
+
+def scrape_recent_fb_posts(collection, no_of_days):
+    # read recent posts from mongoDB and get collect/update counts
 
 
 # params = {
@@ -89,51 +113,14 @@ fb_post_list = list(fb_feed)
 #     "show_description_from_api_doc": True
 # }
 
-def format_time(time):
-    #TODO
-    return time
+fb_app_id, fb_app_secret, fb_access_token = load_config("config.json")
+FacebookAdsApi.init(fb_app_id, fb_app_secret, fb_access_token)
+DB = mf.initialize_db()
 
-def enrich_format_fb_post(post):
-    user_id = post["id"].split("_")[0]
-    if post["from"]["id"] == user_id:
-        new_post["_id"] = post["id"]
-        new_post["platform"] = "facebook"
-        new_post["url"] = post["permalink_url"]
-        new_post["username"] = post["from"]["name"]
-        new_post["taken_at"] = format_time(post["created_time"]) #TODO: Create function to format from "2020-03-13T19:19:23+0000" to insta time format
-        new_post["like_count"],new_post["comment_count"] = scrape_fb_likes_comments(post["permalink_url"])
-        new_post[""]
-        return new_post
-    return False
-    
-def write_fb_posts_to_mongodb(posts,  collection, raw_values=False):
-    # takes a list of enriched fb posts (or one post) and writes it into the mongoDB collection
+fb_target_page_id = "751183738294559"   # wne
 
-    if type(posts) is not list:
-        posts = [posts]
-
-    if raw_values:
-        collection.insert_many(posts)
-        return posts
-
-    new_ids = [p["_id"] for p in posts]
-
-    # delete all items that are in new_ids
-    #TODO replace by update one, if _id exists (on error)!!!
-    collection.delete_many({"_id": {"$in": new_ids}})
-    collection.insert_many(clean_json_list)  # upload multiple items
-
-    print("Instagram Posts written to MongoDB")
-    return(clean_json_list)
-
+fb_post_list = fb_get_feed(fb_target_page_id)
 print(len(fb_post_list))
-#print (fb_post_list)
-for p in fb_post_list[0:5]:
-    
-    #likes = PagePost(post["id"]).get_insights(params = params)
-    print(p["permalink_url"])
-    p["likes"],p["comments"] = scrape_fb_likes_comments(p["permalink_url"])
-    print(p)
-
-#db = initialize_db()
-#write_insta_posts_to_mongodb(fb_post_list,db.facebook_test,True)
+enriched_posts = enrich_format_fb_posts(fb_post_list)
+mf.write_fb_posts_to_mongodb(enriched_posts, DB.posts)
+print(mf.get_total_post_counts(DB.posts,True,True,"2019-12-31"))
