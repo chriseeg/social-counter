@@ -1,4 +1,4 @@
-from mongodb_functions import *
+import mongoDB_functions as mdb
 from InstagramAPI import InstagramAPI
 from threading import Thread
 import time
@@ -123,7 +123,7 @@ def insta_get_media_url(media_id):
 target_username = "weihnachtenneuerleben"
 number_of_threads = 300
 
-insta_username, insta_password = load_config("config_insta_count.json")
+insta_username, insta_password = load_config("config.json")
 insta_api = insta_initialize(insta_username, insta_password)
 insta_user_id = insta_get_user_id(target_username)
 
@@ -136,5 +136,5 @@ feed = insta_get_feed(insta_user_id)
 
 ################
 
-db = initialize_db()
-write_insta_posts_to_mongodb(feed, db.posts)
+DB = mdb.initialize_db()
+mdb.write_insta_posts_to_mongodb(feed, DB.posts)
