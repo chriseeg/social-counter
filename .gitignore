@@ -1,6 +1,6 @@
 *.pyc
 *.pyo
-faceook sdk
+faceook sdk/
 .vscode
 .ipynb_checkpoints
 src
@@ -9,8 +9,5 @@ instapy_test_alt.py
 __pycache__/
 problem_posts
 Code/__pycache__/
-Code/config.json
-*config.json
 Code/test.py
 config.json
-Code/config.json
