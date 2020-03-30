@@ -78,7 +78,6 @@ def write_fb_posts_to_mongodb(posts, collection):
     # new_ids = [p["_id"] for p in posts] #evtl löschen
     for post in posts:
         post_id = post["_id"]
-        # TODO replace by update one, if _id exists (on error)!!!
         # check if post exists in db
         if collection.find({'_id': {"$in": [post_id]}}).count() == 0:
             # insert post if new
