@@ -1,6 +1,6 @@
 *.pyc
 *.pyo
-faceook sdk/
+facebook sdk/
 .vscode
 .ipynb_checkpoints
 src
