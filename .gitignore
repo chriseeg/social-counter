@@ -6,8 +6,11 @@ facebook sdk/
 src
 SocialCounter.code-workspace
 instapy_test_alt.py
+instapy_test_jens.py
+test.py
+test_request_followers.py
+test_request_likes.py
 __pycache__/
 problem_posts
 Code/__pycache__/
-Code/test.py
 config.json
