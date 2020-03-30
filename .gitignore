@@ -1,0 +1,12 @@
+*.pyc
+*.pyo
+faceook sdk
+.vscode
+.ipynb_checkpoints
+src
+SocialCounter.code-workspace
+instapy_test_alt.py
+__pycache__/
+problem_posts
+Code/__pycache__/
+Code/config.json
