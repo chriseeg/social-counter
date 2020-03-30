@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import pymongo
-import ciso8601 
+import ciso8601
 
 
 client_adress = "mongodb://localhost:27017/"
@@ -15,7 +15,7 @@ def initialize_db():
 ################################################################
 
 
-def write_insta_posts_to_mongodb(posts, collection):
+def write_insta_posts_to_mongodb(collection, posts):
     # takes a list of instagram posts in original formatting and writes it into the mongoDB collection
 
     if type(posts) is not list:
@@ -25,24 +25,8 @@ def write_insta_posts_to_mongodb(posts, collection):
     update_count = 0
 
     for post in posts:
-        try:
-            view_count = post["view_count"]
-        except:
-            view_count = 0
         post_id = post["id"]
-        taken_at = datetime.fromtimestamp(post["taken_at"]).strftime('%Y-%m-%d %H:%M:%S')
-        clean_post = {
-            "_id": post_id,
-            "platform": "instagram",
-            "url": "https://www.instagram.com/p/" + post["code"],
-            "username": post["user"]["username"],
-            "taken_at": ciso8601.parse_datetime(str(taken_at)),
-            "comment_count": post["comment_count"],
-            "like_count": post["like_count"],
-            "media_type": post["media_type"],
-            "view_count": view_count
-        }
-
+        clean_post = post
         # check if post exists in db
         if collection.find({'_id': {"$in": [post_id]}}).count() == 0:
             # insert post if new
@@ -66,7 +50,7 @@ def write_insta_posts_to_mongodb(posts, collection):
           ": {} inserted, {} updated".format(insertion_count, update_count))
 
 
-def write_fb_posts_to_mongodb(posts, collection):
+def write_fb_posts_to_mongodb(collection, posts):
     # takes a list of enriched fb posts (or one post) and writes it into the mongoDB collection
 
     if type(posts) is not list:
@@ -116,10 +100,42 @@ def write_fb_page_stats_to_mongodb():
 
 ################################################################
 
+# TODO: create same functions for facebook
 
-def last_insta_posts(collection, no_of_days):
-    # TODO
-    return "list of posts of last x days from mongoDB"
+
+def last_insta_posts_by_days(collection, no_of_days):
+    today = datetime.now()
+    date_threshold = today - timedelta(days=no_of_days)
+    print(date_threshold)
+    result_mdb = collection.find(
+        {
+            "taken_at": {
+                "$gte": date_threshold
+            },
+            "platform": "instagram"
+        },
+        {
+            "_id": 1.0,
+            "url": 1.0
+        })
+    result_list = [p for p in result_mdb]
+    return list(result_list)
+
+
+def last_insta_posts_by_posts(collection, no_of_posts):
+    result_mdb = collection.find(
+        {
+            "platform": "instagram"
+        },
+        {
+            "_id": 1.0,
+            "url": 1.0
+        }
+    ).sort(
+        "taken_at", -1
+    ).limit(no_of_posts)
+    result_list = [p for p in result_mdb]
+    return list(result_list)
 
 ################################################################
 
@@ -207,7 +223,9 @@ def get_total_page_follower_count(collection, instagram=True, facebook=True):
     return ""
 
 
-# db = initialize_db()
-# print(get_total_like_count(db.posts))
-# print(get_total_comment_count(db.posts))
-# print(get_total_view_count(db.posts))
+DB = initialize_db()
+print(last_insta_posts_byposts(DB.posts, 10))
+#print(last_insta_posts_bydays(DB.posts, 50))
+# print(get_total_like_count(DB.posts))
+# print(get_total_comment_count(DB.posts))
+# print(get_total_view_count(DB.posts))

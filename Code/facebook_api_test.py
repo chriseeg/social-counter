@@ -162,5 +162,5 @@ fb_target_page_id = "751183738294559"   # wne
 fb_post_list = fb_get_feed(fb_target_page_id)
 print(len(fb_post_list))
 enriched_posts = enrich_format_fb_posts(fb_post_list)
-mf.write_fb_posts_to_mongodb(enriched_posts, DB.fb_test)
+mf.write_fb_posts_to_mongodb(DB.fb_test, enriched_posts)
 print(mf.get_total_post_counts(DB.fb_test, True, True, "2009-12-31"))
