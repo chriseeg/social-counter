@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import pymongo
 import ciso8601 
 
@@ -15,7 +15,7 @@ def initialize_db():
 ################################################################
 
 
-def write_insta_posts_to_mongodb(posts, collection):
+def write_insta_posts_to_mongodb(collection, posts):
     # takes a list of instagram posts in original formatting and writes it into the mongoDB collection
 
     if type(posts) is not list:
@@ -25,6 +25,7 @@ def write_insta_posts_to_mongodb(posts, collection):
     update_count = 0
 
     for post in posts:
+        """
         try:
             view_count = post["view_count"]
         except:
@@ -42,31 +43,34 @@ def write_insta_posts_to_mongodb(posts, collection):
             "media_type": post["media_type"],
             "view_count": view_count
         }
+        """
 
         # check if post exists in db
-        if collection.find({'_id': {"$in": [post_id]}}).count() == 0:
+        if collection.find({'_id': {"$in": [post["_id"]]}}).count() == 0:
             # insert post if new
-            collection.insert_one(clean_post)
+            collection.insert_one(post)
             insertion_count += 1
         else:
             # update existing post
             collection.update_one(
-                {"_id": post_id},
+                {"_id": post["_id"]},
                 {
                     "$set": {
-                        "like_count": clean_post["like_count"],
-                        "comment_count": clean_post["comment_count"],
-                        "view_count": clean_post["view_count"]
+                        "like_count": post["like_count"],
+                        "comment_count": post["comment_count"],
+                        "view_count": post["view_count"]
                     }
                 }
             )
             update_count += 1
 
-    print("Instagram Posts written to MongoDB " + collection.name +
-          ": {} inserted, {} updated".format(insertion_count, update_count))
+    #print("Instagram Posts written to MongoDB " + collection.name +
+    #      ": {} inserted, {} updated".format(insertion_count, update_count))
+
+    return insertion_count, update_count
 
 
-def write_fb_posts_to_mongodb(posts, collection):
+def write_fb_posts_to_mongodb(collection, posts):
     # takes a list of enriched fb posts (or one post) and writes it into the mongoDB collection
 
     if type(posts) is not list:
@@ -117,9 +121,39 @@ def write_fb_page_stats_to_mongodb():
 ################################################################
 
 
-def last_insta_posts(collection, no_of_days):
-    # TODO
-    return "list of posts of last x days from mongoDB"
+def last_insta_posts_by_days(collection, no_of_days):
+    today = datetime.now()
+    date_threshold = today - timedelta(days=no_of_days)
+    print(date_threshold)
+    result_mdb = collection.find(
+        {
+            "taken_at": {
+                "$gte": date_threshold
+            },
+            "platform": "instagram"
+        },
+        {
+            "_id": 1.0,
+            "url": 1.0
+        })
+    result_list = [p for p in result_mdb]
+    return list(result_list)
+
+
+def last_insta_posts_by_posts(collection, no_of_posts):
+    result_mdb = collection.find(
+        {
+            "platform": "instagram"
+        },
+        {
+            "_id": 1.0,
+            "url": 1.0
+        }
+    ).sort(
+        "taken_at", -1
+    ).limit(no_of_posts)
+    result_list = [p for p in result_mdb]
+    return list(result_list)
 
 ################################################################
 
