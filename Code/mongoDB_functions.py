@@ -25,29 +25,49 @@ def write_insta_posts_to_mongodb(collection, posts):
     update_count = 0
 
     for post in posts:
+        """
+        try:
+            view_count = post["view_count"]
+        except:
+            view_count = 0
         post_id = post["id"]
-        clean_post = post
+        taken_at = datetime.fromtimestamp(post["taken_at"]).strftime('%Y-%m-%d %H:%M:%S')
+        clean_post = {
+            "_id": post_id,
+            "platform": "instagram",
+            "url": "https://www.instagram.com/p/" + post["code"],
+            "username": post["user"]["username"],
+            "taken_at": ciso8601.parse_datetime(str(taken_at)),
+            "comment_count": post["comment_count"],
+            "like_count": post["like_count"],
+            "media_type": post["media_type"],
+            "view_count": view_count
+        }
+        """
+
         # check if post exists in db
-        if collection.find({'_id': {"$in": [post_id]}}).count() == 0:
+        if collection.find({'_id': {"$in": [post["_id"]]}}).count() == 0:
             # insert post if new
-            collection.insert_one(clean_post)
+            collection.insert_one(post)
             insertion_count += 1
         else:
             # update existing post
             collection.update_one(
-                {"_id": post_id},
+                {"_id": post["_id"]},
                 {
                     "$set": {
-                        "like_count": clean_post["like_count"],
-                        "comment_count": clean_post["comment_count"],
-                        "view_count": clean_post["view_count"]
+                        "like_count": post["like_count"],
+                        "comment_count": post["comment_count"],
+                        "view_count": post["view_count"]
                     }
                 }
             )
             update_count += 1
 
-    print("Instagram Posts written to MongoDB " + collection.name +
-          ": {} inserted, {} updated".format(insertion_count, update_count))
+    #print("Instagram Posts written to MongoDB " + collection.name +
+    #      ": {} inserted, {} updated".format(insertion_count, update_count))
+
+    return insertion_count, update_count
 
 
 def write_fb_posts_to_mongodb(collection, posts):
@@ -101,7 +121,6 @@ def write_fb_page_stats_to_mongodb():
 ################################################################
 
 # TODO: create same functions for facebook
-
 
 def last_insta_posts_by_days(collection, no_of_days):
     today = datetime.now()
@@ -224,7 +243,7 @@ def get_total_page_follower_count(collection, instagram=True, facebook=True):
 
 
 DB = initialize_db()
-print(last_insta_posts_byposts(DB.posts, 10))
+print(last_insta_posts_by_posts(DB.posts, 10))
 #print(last_insta_posts_bydays(DB.posts, 50))
 # print(get_total_like_count(DB.posts))
 # print(get_total_comment_count(DB.posts))
