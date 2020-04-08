@@ -14,3 +14,5 @@ __pycache__/
 problem_posts
 Code/__pycache__/
 config.json
+Code/social_counter.py
+.gitignore

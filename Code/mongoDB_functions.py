@@ -7,13 +7,31 @@ client_adress = "mongodb://localhost:27017/"
 
 
 def initialize_db():
-    print("MongoDB initialized")
     client = pymongo.MongoClient(client_adress)
     db = client.socialcounter_db
+    print("MongoDB initialized")
     return db
 
-################################################################
 
+def initialize_posts_collection(database,clean_content = False):
+    collection = database.posts
+    if clean_content:
+        x = collection.delete_many({})
+        print("Collection cleared")
+        print(x.deleted_count, " documents deleted.")
+    print("Collection initialized")
+    return collection
+
+def initialize_pagestats_collection(database,clean_content = False):
+    collection = database.pagestats
+    if clean_content:
+        x = collection.delete_many({})
+        print("Collection cleared")
+        print(x.deleted_count, " documents deleted.")
+    print("Collection initialized")
+    return collection
+
+################################################################
 
 def write_insta_posts_to_mongodb(collection, posts):
     # takes a list of instagram posts in original formatting and writes it into the mongoDB collection
@@ -106,7 +124,6 @@ def write_fb_posts_to_mongodb(collection, posts):
 
 ################################################################
 
-
 def write_insta_page_stats_to_mongodb():
     # TODO
 
@@ -120,7 +137,32 @@ def write_fb_page_stats_to_mongodb():
 
 ################################################################
 
-# TODO: create same functions for facebook
+def last_fb_posts_by_days(collection, no_of_days):
+    today = datetime.now()
+    date_threshold = today - timedelta(days=no_of_days)
+    print(date_threshold)
+    result_mdb = collection.find(
+        {
+            "taken_at": {
+                "$gte": date_threshold
+            },
+            "platform": "facebook"
+        })
+    result_list = [p for p in result_mdb]
+    return list(result_list)
+
+
+def last_fb_posts_by_posts(collection, no_of_posts):
+    result_mdb = collection.find(
+        {
+            "platform": "facebook"
+        }
+    ).sort(
+        "taken_at", -1
+    ).limit(no_of_posts)
+    result_list = [p for p in result_mdb]
+    return list(result_list)
+
 
 def last_insta_posts_by_days(collection, no_of_days):
     today = datetime.now()
@@ -243,7 +285,8 @@ def get_total_page_follower_count(collection, instagram=True, facebook=True):
 
 
 DB = initialize_db()
-print(last_insta_posts_by_posts(DB.posts, 10))
+post_col = initialize_posts_collection(DB,False)
+print(last_fb_posts_by_posts(post_col, 10))
 #print(last_insta_posts_bydays(DB.posts, 50))
 # print(get_total_like_count(DB.posts))
 # print(get_total_comment_count(DB.posts))

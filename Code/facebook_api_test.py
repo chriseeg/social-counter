@@ -1,5 +1,3 @@
-#!pip3 install facebook_business
-
 from facebook_business.adobjects.page import Page
 from facebook_business.adobjects.pagepost import PagePost
 from facebook_business.api import FacebookAdsApi
@@ -11,6 +9,11 @@ import json
 import re
 import os
 
+def fb_initialize():
+    fb_app_id, fb_app_secret, fb_access_token = load_config("config.json")
+    FacebookAdsApi.init(fb_app_id, fb_app_secret, fb_access_token)
+    print("Facebook Api initialized")
+    return fb_access_token
 
 def load_config(filepath):
     dirname = os.path.dirname(__file__) + "/" + filepath
@@ -23,19 +26,34 @@ def load_config(filepath):
     print("Configuration set")
     return fb_app_id, fb_app_secret, fb_access_token
 
+def get_fb_page_token(fb_target_page_id):
+    url = "https://graph.facebook.com/v6.0/" + fb_target_page_id
+    params = {"fields" : "page_token", "access_token" : fb_access_token}
+    r = requests.get(url = url, params = params).json()
+    print(r)
+    page_token = r["page_token"]
+    
+    return page_token
 
-def fb_get_feed(fb_target_page_id):
+################################################################
+
+def fb_get_api_feed(fb_target_page_id, limit):
+    if limit == None:
+        limit = 100000
     print("Getting facebook feed")
     fb_page = Page(fb_target_page_id)
 
     #fields = ["id","permalink_url","created_time","from","comments.summary(true)","likes.summary(true)"]
     fields = ["id", "permalink_url", "created_time", "from"]
-    fb_feed = fb_page.get_feed(fields=fields, params={})  # "limit":100})
+    page_token = get_fb_page_token(fb_target_page_id)
+    fb_feed = fb_page.get_feed(fields=fields, params={"limit":limit})
     fb_post_list = list(fb_feed)
-    return fb_post_list
-
+    print("Retrieved {} posts".format(len(fb_post_list)))
+    return fb_post_list, page_token
 
 def fb_get_page_metrics():
+    #TODO:
+
     # unused!
     # params = {
     #     "metric": ['post_reactions_by_type_total', "post_impressions", "post_clicks"],
@@ -44,19 +62,15 @@ def fb_get_page_metrics():
     # }
     return True
 
+################################################################
 
-def enrich_format_fb_posts(posts):
-    # Converts one or multiple facebook posts for mongoDB
-    #TODO: Instantly write post to mongoDB
-    print("Enriching facebook posts")
-
+def convert_fb_posts(posts, page_token):
     input_type = list
     if type(posts) is not list:
         posts = [posts]
         input_type = dict
-
-    enriched_posts = []
-
+    
+    converted_posts = []
     for post in posts:
         target_user_id = post["id"].split("_")[0]
         new_post = {}
@@ -76,26 +90,47 @@ def enrich_format_fb_posts(posts):
             new_post["_id"] = post["id"]
             new_post["platform"] = "facebook"
             new_post["url"] = post["permalink_url"]
-            new_post["username"] = post["from"]["name"]
+            new_post["username"] = page_token
             new_post["taken_at"] = ciso8601.parse_datetime(
                 post["created_time"])
-            new_post["like_count"], new_post["comment_count"], new_post["notes"] = scrape_fb_likes_comments(
-                post["permalink_url"])
+            new_post["like_count"] = 0
+            new_post["comment_count"] = 0
+            new_post["notes"] = 0
             new_post["media_type"] = media_type
-            enriched_posts.append(new_post)
+            converted_posts.append(new_post)
 
     if input_type is list:
-        return enriched_posts
+        return converted_posts
     else:
-        return enriched_posts[0]
+        return converted_posts[0]
 
+def scrape_write_fb_posts(posts, collection):
+    # Scrapes one or multiple facebook posts and writes it to mongoDB
+    print("Scraping and writing facebook posts")
+
+    input_type = list
+    if type(posts) is not list:
+        posts = [posts]
+        input_type = dict
+
+    scraped_posts = []
+
+    for post in posts:
+        post["like_count"], post["comment_count"], post["notes"] = scrape_fb_likes_comments(post["url"])
+        scraped_posts.append(post)
+
+        mf.write_fb_posts_to_mongodb(collection,post)
+
+    if input_type is list:
+        return scraped_posts
+    else:
+        return scraped_posts[0]
 
 def scrape_fb_likes_comments(url):
     regex_post_id = re.search(
         r"([0-9]{15,16}){0,1}\/([a-z]+)\/([0-9]{15,16})\/", url)
     post_id = regex_post_id.group(3)
 
-    re_like_string = r'share_fbid:"([0-9]+)",reactors:{count:([0-9]+)'
     re_comment_string = r'subscription_target_id:"' + post_id + \
         r'",owning_profile:{__typename:"Page",id:"[0-9]+"},num_localized_comment_orderings:[0-9]+,comment_count:{total_count:([0-9]+)}'
 
@@ -103,25 +138,24 @@ def scrape_fb_likes_comments(url):
     error_note = ""
 
     try:
-        re_like_result = re.search(re_like_string, r)
         reference_id = re.findall(r'top_level_post_id.([0-9]+)', r)[0]
+        re_like_string = r'share_fbid:"' + reference_id + r'",reactors:{count:([0-9]+)'
         #print(reference_id)
         if reference_id == post_id:
-            like_count = int(re_like_result.group(2))
+            like_count = int(re.search(re_like_string, r).group(1))
             comment_count = int(re.search(re_comment_string, r).group(1))
             #print("solution 1")
         else:
             try:
-                re_like_string2 = r'share_fbid:"' + \
-                    reference_id + r'",reactors:{count:([0-9]+)'
+                re_like_string2 = r'share_fbid:"' + reference_id + r'",reactors:{count:([0-9]+)'
                 re_comment_string2 = r'subscription_target_id:"' + reference_id + \
                     r'",owning_profile:{__typename:"Page",id:"[0-9]+"},num_localized_comment_orderings:[0-9]+,comment_count:{total_count:([0-9]+)}'
 
                 like_count = int(re.search(re_like_string2, r).group(1))
                 comment_count = int(re.search(re_comment_string2, r).group(1))
-                print("solution2")
+                #print("solution2 {}".format(url))
             except:
-                print("yo")
+                print("yo {}".format(url))
                 
                 raise Exception("not so good")
     except:
@@ -131,7 +165,7 @@ def scrape_fb_likes_comments(url):
 
             like_count = int(re.search(re_like_string3, r).group(1))
             comment_count = int(re.search(re_comment_string3, r).group(1))
-            print("solution 3")
+            #print("solution 3 {}".format(url)")
         except:
             like_count = 0
             comment_count = 0
@@ -141,10 +175,32 @@ def scrape_fb_likes_comments(url):
 
     return (like_count, comment_count, error_note)
 
+################################################################
 
 def scrape_recent_fb_posts(collection, no_of_days):
     # read recent posts from mongoDB and get collect/update counts
+    recent_posts = mf.last_fb_posts_by_days(collection, no_of_days)
+    scrape_write_fb_posts(recent_posts,collection)
     return True
+
+def scrape_recent_x_fb_posts(collection, no_of_posts):
+    # read recent posts from mongoDB and get collect/update counts
+    recent_posts = mf.last_fb_posts_by_posts(collection, no_of_posts)
+    scrape_write_fb_posts(recent_posts,collection)
+    return True
+
+def scrape_all_fb_posts(collection):
+    # read all posts from mongoDB and get collect/update counts
+    return scrape_recent_fb_posts(collection,10000)
+
+def scrape_fb_feed(collection,fb_target_page_id,limit=None):
+    # get feed and scrape posts and load to mongodb
+    fb_post_list, page_token = fb_get_api_feed(fb_target_page_id,limit)
+    converted_posts = convert_fb_posts(fb_post_list[:limit],page_token)
+    scrape_write_fb_posts(converted_posts,collection)
+    return True
+
+################################################################
 
 # params = {
 #     "metric": ['post_reactions_by_type_total', "post_impressions", "post_clicks"],
@@ -153,14 +209,14 @@ def scrape_recent_fb_posts(collection, no_of_days):
 # }
 
 
-fb_app_id, fb_app_secret, fb_access_token = load_config("config.json")
-FacebookAdsApi.init(fb_app_id, fb_app_secret, fb_access_token)
+
+fb_access_token = fb_initialize()
+
 DB = mf.initialize_db()
+post_col = mf.initialize_posts_collection(DB,True)
 
 fb_target_page_id = "751183738294559"   # wne
 
-fb_post_list = fb_get_feed(fb_target_page_id)
-print(len(fb_post_list))
-enriched_posts = enrich_format_fb_posts(fb_post_list)
-mf.write_fb_posts_to_mongodb(DB.fb_test, enriched_posts)
-print(mf.get_total_post_counts(DB.fb_test, True, True, "2009-12-31"))
+scrape_fb_feed(post_col,fb_target_page_id,10)
+
+print(mf.get_total_post_counts(post_col, True, True, "2009-12-31"))
